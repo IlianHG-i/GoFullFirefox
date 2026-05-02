@@ -22,25 +22,49 @@ prefer it.
 - Stitches every viewport tile on a canvas at the page's `devicePixelRatio`.
 - Downloads as PNG or copies the image to the clipboard.
 
-## Install (temporary, for development)
+## Install
+
+This extension is **not published on addons.mozilla.org** and will never be.
+It is distributed exclusively as a **signed `.xpi` from this repo's GitHub
+Releases**.
+
+### Permanent install (signed `.xpi`)
+
+1. Open the latest [GitHub Release](https://github.com/IlianHG-i/GoFullFirefox/releases/latest).
+2. Download `gofullfirefox-<version>.xpi`.
+3. Open Firefox → drag-and-drop the `.xpi` onto a Firefox window
+   (or `about:addons` → gear icon → *Install Add-on From File…*).
+4. Confirm the install prompt.
+
+The build is signed by Mozilla on the **unlisted (self-hosted) channel**, so
+it installs without `xpinstall.signatures.required` tweaks but does not
+appear in the public AMO catalog.
+
+### Temporary install (for development)
 
 1. Clone this repo.
-2. Open `about:debugging#/runtime/this-firefox` in Firefox.
+2. Open `about:debugging#/runtime/this-firefox`.
 3. Click **Load Temporary Add-on…** and select `manifest.json`.
-4. A toolbar icon appears. Click it on any page to capture.
 
-Temporary add-ons are removed when Firefox restarts. For persistent install,
-package and submit to [addons.mozilla.org](https://addons.mozilla.org/) (see
-below).
+Temporary add-ons are removed when Firefox restarts.
 
-## Package for AMO
+## Build & sign locally
 
+CI handles this automatically on tag push (`v*.*.*` → signed `.xpi` attached
+to a GitHub Release). To do it by hand:
+
+```bash
+npm install -g web-ext
+web-ext lint --self-hosted
+web-ext sign --channel=unlisted \
+  --api-key="$AMO_JWT_ISSUER" \
+  --api-secret="$AMO_JWT_SECRET"
+# signed .xpi lands in web-ext-artifacts/
 ```
-zip -r gofullfirefox.zip manifest.json background.js content.js \
-    result.html result.js icons/icon.svg LICENSE README.md
-```
 
-Upload the resulting `gofullfirefox.zip` via the Firefox Add-on Developer Hub.
+**Always use `--channel=unlisted`.** Never `listed` — that would publish
+this extension on the public AMO catalog, which is explicitly out of scope
+for this project.
 
 ## How it works
 

@@ -64,6 +64,19 @@ There is no test suite. Verification is manual: load the extension, capture a
 long page (e.g. a Wikipedia article), confirm the result tab shows a stitched
 PNG with no repeating headers and that Download/Copy work.
 
+## Distribution policy (important)
+
+This extension is **never** published on the public AMO catalog. It is
+distributed only as a **signed `.xpi` on GitHub Releases**, signed via the
+**unlisted** channel using `web-ext sign --channel=unlisted` with the repo
+secrets `AMO_JWT_ISSUER` / `AMO_JWT_SECRET`.
+
+- `.github/workflows/release.yml` runs on `v*.*.*` tags: lint → sign
+  unlisted → upload `gofullfirefox-<tag>.xpi` as a Release asset.
+- Never change `--channel=unlisted` to `listed`.
+- Never add AMO install links to README or docs.
+- Never run `web-ext sign` interactively without `--channel=unlisted`.
+
 ## Editing rules specific to this repo
 
 - Target Firefox MV3 with `background.scripts` (event page). Do **not**
