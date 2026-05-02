@@ -1,0 +1,58 @@
+name: Build & sign XPI (unlisted)
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install web-ext
+        run: npm install --global web-ext@latest
+
+      - name: Lint
+        run: web-ext lint --self-hosted
+
+      - name: Sign XPI on AMO unlisted channel (self-hosted)
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
+          WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          web-ext sign \
+            --channel=unlisted \
+            --artifacts-dir=web-ext-artifacts \
+            --api-key="$WEB_EXT_API_KEY" \
+            --api-secret="$WEB_EXT_API_SECRET"
+
+      - name: Rename artifact
+        run: |
+          set -euo pipefail
+          XPI=$(ls web-ext-artifacts/*.xpi | head -n1)
+          cp "$XPI" "web-ext-artifacts/gofullfirefox-${GITHUB_REF_NAME}.xpi"
+
+      - name: Publish GitHub Release with signed XPI
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: web-ext-artifacts/gofullfirefox-*.xpi
+          generate_release_notes: true
+          body: |
+            Signed Firefox extension (unlisted channel — not on AMO public catalog).
+
+            **Install**: download the `.xpi` below, then drag-and-drop it onto
+            a Firefox window, or open `about:addons` and use the gear menu →
+            *Install Add-on From File…*.
+
+            Unofficial Firefox port of [GoFullPage](https://github.com/mrcoles/full-page-screen-capture-chrome-extension) by Peter Coles. MIT.
