@@ -1,6 +1,8 @@
-// GoFullFirefox - content script
-// Measures the page, hides scrollbars / position:fixed elements during capture,
-// scrolls to requested offsets, and restores everything afterwards.
+// GoFullFox - content script
+// Measures the page first, then on a separate message hides scrollbars and
+// freezes position:fixed/sticky elements so they do not repeat across tiles.
+// scrollTo returns the *actual* scroll position (browser may clamp it past
+// the maximum), which the background uses for accurate stitching.
 //
 // Adapted from GoFullPage (mrcoles/full-page-screen-capture-chrome-extension, MIT).
 
@@ -52,17 +54,25 @@
     for (const el of all) {
       const cs = window.getComputedStyle(el);
       if (cs.position === "fixed" || cs.position === "sticky") {
-        originalState.fixedElements.push({ el, position: el.style.position });
+        originalState.fixedElements.push({ el, position: el.style.position, priority: el.style.getPropertyPriority("position") });
         el.style.setProperty("position", "absolute", "important");
       }
     }
   }
 
+  let prepared = false;
+  function prepare() {
+    if (prepared) return;
+    prepared = true;
+    hideScrollbars();
+    neutralizeFixedElements();
+  }
+
   function restore() {
     document.documentElement.style.overflow = originalState.htmlOverflow;
     if (document.body) document.body.style.overflow = originalState.bodyOverflow;
-    for (const { el, position } of originalState.fixedElements) {
-      if (position) el.style.position = position;
+    for (const { el, position, priority } of originalState.fixedElements) {
+      if (position) el.style.setProperty("position", position, priority || "");
       else el.style.removeProperty("position");
     }
     originalState.fixedElements.length = 0;
@@ -70,25 +80,25 @@
     window.__gffInjected = false;
   }
 
-  let prepared = false;
-  function prepareOnce() {
-    if (prepared) return;
-    prepared = true;
-    hideScrollbars();
-    neutralizeFixedElements();
-  }
-
   browser.runtime.onMessage.addListener((msg) => {
     if (!msg || !msg.type) return;
     if (msg.type === "gff:getDimensions") {
-      prepareOnce();
+      // Must run BEFORE prepare() so overflow:hidden does not collapse scrollHeight.
       return Promise.resolve(getDimensions());
+    }
+    if (msg.type === "gff:prepare") {
+      prepare();
+      return Promise.resolve(true);
     }
     if (msg.type === "gff:scrollTo") {
       window.scrollTo(msg.x, msg.y);
-      // Some sites animate scroll; resolve on next frame.
+      // Two RAFs let the browser clamp / settle, then report the actual offset.
       return new Promise((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)))
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() =>
+            resolve({ x: window.scrollX, y: window.scrollY })
+          )
+        )
       );
     }
     if (msg.type === "gff:restore") {
