@@ -40,6 +40,13 @@ The build is signed by Mozilla on the **unlisted (self-hosted) channel**, so
 it installs without `xpinstall.signatures.required` tweaks but does not
 appear in the public AMO catalog.
 
+### Auto-update
+
+Once installed, Firefox auto-updates the extension by polling
+[`update.json`](./update.json) on `main`. The release CI rewrites this file
+on every tag push (`vX.Y.Z`) with the latest version, signed `.xpi` URL, and
+SHA-256. **No manual `.xpi` download needed after the first install.**
+
 ### Temporary install (for development)
 
 1. Clone this repo.

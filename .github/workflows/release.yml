@@ -51,8 +51,46 @@ jobs:
           body: |
             Signed Firefox extension (unlisted channel — not on AMO public catalog).
 
-            **Install**: download the `.xpi` below, then drag-and-drop it onto
-            a Firefox window, or open `about:addons` and use the gear menu →
-            *Install Add-on From File…*.
+            **First install**: download the `.xpi` below, drag-and-drop it onto
+            a Firefox window (or `about:addons` → gear → *Install Add-on From File…*).
+
+            **Subsequent updates**: automatic. Firefox checks
+            `update.json` on this repo's `main` branch.
 
             Unofficial Firefox port of [GoFullPage](https://github.com/mrcoles/full-page-screen-capture-chrome-extension) by Peter Coles. MIT.
+
+      - name: Update update.json on main (auto-update manifest)
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          XPI_FILE="web-ext-artifacts/gofullfirefox-${GITHUB_REF_NAME}.xpi"
+          XPI_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/gofullfirefox-${GITHUB_REF_NAME}.xpi"
+          HASH="$(sha256sum "$XPI_FILE" | cut -d' ' -f1)"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout main
+
+          cat > update.json <<EOF
+          {
+            "addons": {
+              "gofullfirefox@ilianhg": {
+                "updates": [
+                  {
+                    "version": "${VERSION}",
+                    "update_link": "${XPI_URL}",
+                    "update_hash": "sha256:${HASH}"
+                  }
+                ]
+              }
+            }
+          }
+          EOF
+
+          git add update.json
+          git commit -m "chore: publish update.json for ${GITHUB_REF_NAME} [skip ci]" || { echo "no changes"; exit 0; }
+          git push origin main
