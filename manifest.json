@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "GoFullFirefox",
+  "version": "1.0.0",
+  "description": "Capture an entire page as a single image. Unofficial Firefox port of GoFullPage by Peter Coles.",
+  "author": "IlianHG-i (Firefox port). Original: Peter Coles (mrcoles).",
+  "homepage_url": "https://github.com/IlianHG-i/GoFullFirefox",
+  "permissions": ["activeTab", "scripting", "storage", "downloads"],
+  "host_permissions": ["<all_urls>"],
+  "action": {
+    "default_title": "Capture entire page (GoFullFirefox)",
+    "default_icon": {
+      "48": "icons/icon.svg",
+      "128": "icons/icon.svg"
+    }
+  },
+  "icons": {
+    "48": "icons/icon.svg",
+    "128": "icons/icon.svg"
+  },
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["result.html"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "gofullfirefox@ilianhg",
+      "strict_min_version": "115.0"
+    }
+  }
+}
