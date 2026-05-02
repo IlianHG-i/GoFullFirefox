@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>GoFullFirefox - Capture</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        background: #1f1f23;
+        color: #f4f4f5;
+      }
+      header {
+        position: sticky;
+        top: 0;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        padding: 10px 14px;
+        background: #2a2a30;
+        border-bottom: 1px solid #3a3a42;
+        z-index: 10;
+      }
+      header h1 {
+        font-size: 14px;
+        font-weight: 600;
+        margin: 0 12px 0 0;
+      }
+      header .meta { font-size: 12px; opacity: 0.7; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      button {
+        background: #3b82f6;
+        color: white;
+        border: 0;
+        padding: 6px 14px;
+        border-radius: 6px;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      button.secondary { background: #52525b; }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
+      main { padding: 16px; }
+      #status { font-size: 13px; opacity: 0.8; }
+      #preview {
+        display: block;
+        max-width: 100%;
+        height: auto;
+        margin-top: 12px;
+        border: 1px solid #3a3a42;
+        background: white;
+      }
+      footer { padding: 12px 16px; font-size: 11px; opacity: 0.6; border-top: 1px solid #3a3a42; }
+      a { color: #93c5fd; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>GoFullFirefox</h1>
+      <span class="meta" id="meta"></span>
+      <button id="download" disabled>Download PNG</button>
+      <button id="copy" class="secondary" disabled>Copy</button>
+    </header>
+    <main>
+      <div id="status">Stitching capture...</div>
+      <img id="preview" alt="" />
+    </main>
+    <footer>
+      Unofficial Firefox port of <a href="https://github.com/mrcoles/full-page-screen-capture-chrome-extension" target="_blank" rel="noopener">GoFullPage</a> by Peter Coles. MIT licensed.
+    </footer>
+    <script src="result.js"></script>
+  </body>
+</html>
