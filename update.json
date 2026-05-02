@@ -1,7 +1,13 @@
 {
   "addons": {
     "gofullfirefox@ilianhg": {
-      "updates": []
+      "updates": [
+        {
+          "version": "1.0.2",
+          "update_link": "https://github.com/IlianHG-i/GoFullFirefox/releases/download/v1.0.2/gofullfirefox-v1.0.2.xpi",
+          "update_hash": "sha256:b1d10a89788f431407bbfd2f390ad098d847f0d89db77b1212576a50bb4b799f"
+        }
+      ]
     }
   }
 }
