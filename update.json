@@ -3,9 +3,9 @@
     "gofullfirefox@ilianhg": {
       "updates": [
         {
-          "version": "1.0.5",
-          "update_link": "https://github.com/IlianHG-i/GoFullFirefox/releases/download/v1.0.5/gofullfirefox-v1.0.5.xpi",
-          "update_hash": "sha256:31e4fd996994777a25e00c402c6f2252c4f7a83c09d6d1da899cc8cd93698a08"
+          "version": "1.0.6",
+          "update_link": "https://github.com/IlianHG-i/GoFullFirefox/releases/download/v1.0.6/gofullfirefox-v1.0.6.xpi",
+          "update_hash": "sha256:2a3fb8c93a5e8d07f4cf0bfcb61689aa5717954e2507e7b10db675d8a23a2ba9"
         }
       ]
     }
