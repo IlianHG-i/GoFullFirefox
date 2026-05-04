@@ -131,6 +131,7 @@ function overlayCreate(tabId, total) {
       const el = document.createElement('div');
       el.id = '__gff_overlay';
       el.innerHTML = `
+        <span class="__gff_icon">🦊</span>
         <span class="__gff_label">GoFullFox</span>
         <div class="__gff_track"><div class="__gff_fill" id="__gff_fill"></div></div>
         <span class="__gff_count" id="__gff_count">0 / ${total}</span>
@@ -139,58 +140,68 @@ function overlayCreate(tabId, total) {
       s.cssText = [
         'all:initial',
         'position:fixed',
-        'bottom:20px',
-        'right:20px',
+        'bottom:22px',
+        'right:22px',
         'z-index:2147483647',
         'display:flex',
         'align-items:center',
-        'gap:10px',
-        'padding:10px 16px',
-        'background:rgba(15,15,20,0.82)',
-        'backdrop-filter:blur(12px)',
-        '-webkit-backdrop-filter:blur(12px)',
-        'border:1px solid rgba(255,255,255,0.10)',
+        'gap:9px',
+        'padding:10px 18px',
+        'background:rgba(255,255,255,0.55)',
+        'backdrop-filter:blur(28px) saturate(180%)',
+        '-webkit-backdrop-filter:blur(28px) saturate(180%)',
+        'border:1px solid rgba(255,255,255,0.75)',
         'border-radius:999px',
-        'box-shadow:0 4px 24px rgba(0,0,0,0.4)',
-        'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
+        'box-shadow:0 1px 0 rgba(255,255,255,0.90) inset,0 0 0 0.5px rgba(255,255,255,0.35) inset,0 4px 6px rgba(0,0,0,0.06),0 12px 32px rgba(0,0,0,0.12)',
+        'font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif',
         'font-size:13px',
-        'color:#e4e4e7',
+        'color:#1c1c1e',
         'line-height:1',
         'pointer-events:none',
         'user-select:none',
-        'transition:opacity 0.15s ease',
       ].join(';');
 
       const style = document.createElement('style');
       style.id = '__gff_style';
       style.textContent = `
+        #__gff_overlay .__gff_icon {
+          font-size: 15px;
+          line-height: 1;
+        }
         #__gff_overlay .__gff_label {
           font-weight: 600;
-          color: #a78bfa;
-          font-size: 12px;
-          letter-spacing: 0.04em;
-          text-transform: uppercase;
+          font-size: 13px;
+          letter-spacing: -0.01em;
+          color: #1c1c1e;
         }
         #__gff_overlay .__gff_track {
-          width: 100px;
-          height: 4px;
-          background: rgba(255,255,255,0.12);
+          width: 90px;
+          height: 3px;
+          background: rgba(0,0,0,0.10);
           border-radius: 99px;
           overflow: hidden;
+          box-shadow: 0 1px 0 rgba(255,255,255,0.6) inset;
         }
         #__gff_overlay .__gff_fill {
           height: 100%;
           width: 0%;
-          background: linear-gradient(90deg, #6d28d9, #a78bfa);
+          background: linear-gradient(90deg, #6366f1, #a78bfa, #c084fc);
+          background-size: 200% 100%;
           border-radius: 99px;
           transition: width 0.25s ease;
+          animation: __gff_shimmer 2s linear infinite;
+        }
+        @keyframes __gff_shimmer {
+          0%   { background-position: 200% center; }
+          100% { background-position: -200% center; }
         }
         #__gff_overlay .__gff_count {
           font-variant-numeric: tabular-nums;
           font-size: 12px;
-          color: #a1a1aa;
-          min-width: 42px;
+          color: rgba(60,60,67,0.55);
+          min-width: 38px;
           text-align: right;
+          letter-spacing: -0.01em;
         }
       `;
       document.head.appendChild(style);
