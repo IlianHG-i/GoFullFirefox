@@ -93,32 +93,21 @@ function hideProgress() {
 
   pdfBtn.addEventListener('click', async () => {
     pdfBtn.disabled = true;
-    const prev = pdfBtn.textContent;
     progWrap.style.display = 'block';
-    setProgress(0, 'Encoding PDF…');
+    setProgress(0, 'Starting PDF export…');
     try {
-      const steps = [
-        [20,  'Compressing image…'],
-        [60,  'Building PDF structure…'],
-        [90,  'Finalising…'],
-      ];
-      let stepIdx = 0;
-      const interval = setInterval(() => {
-        if (stepIdx >= steps.length) { clearInterval(interval); return; }
-        const [p, l] = steps[stepIdx++];
-        setProgress(p, l);
-      }, 300);
-      const pdfBlob = await canvasToPdf(canvas);
-      clearInterval(interval);
+      const pdfBlob = await canvasToPdf(canvas, (done, total) => {
+        const pct = Math.round((done / total) * 92);
+        setProgress(pct, `Encoding page ${done} / ${total}…`);
+      });
       setProgress(100, 'PDF ready');
-      setTimeout(hideProgress, 600);
+      setTimeout(hideProgress, 700);
       triggerDownload(URL.createObjectURL(pdfBlob), base + '.pdf');
     } catch (err) {
       alert('PDF encoding failed: ' + err.message);
       hideProgress();
     } finally {
       pdfBtn.disabled = false;
-      pdfBtn.textContent = prev;
     }
   });
 
@@ -155,37 +144,118 @@ function sanitizeFilename(name) {
   return (name || 'capture').replace(/[\\/:*?"<>|]+/g, '_').trim().slice(0, 120) || 'capture';
 }
 
-async function canvasToPdf(canvas) {
-  const jpegBlob = await new Promise((res, rej) =>
-    canvas.toBlob(b => b ? res(b) : rej(new Error('JPEG encode failed')), 'image/jpeg', 0.92)
-  );
-  const jpegBytes = new Uint8Array(await jpegBlob.arrayBuffer());
-  const W = canvas.width, H = canvas.height;
-  const enc = new TextEncoder();
-  const parts = []; const offsets = []; let len = 0;
+// Multi-page A4 PDF builder.
+// The canvas is scaled to fit A4 width (595.28 pt) and split into as many
+// A4 pages as needed. Each page embeds its slice as a JPEG stream.
+async function canvasToPdf(canvas, onPageProgress) {
+  const A4_W = 595.28;  // points (72 pt = 1 inch)
+  const A4_H = 841.89;
 
-  const push = c => { const b = typeof c === 'string' ? enc.encode(c) : c; parts.push(b); len += b.length; };
-  const obj  = (n, d, s) => {
-    offsets[n] = len;
-    push(`${n} 0 obj\n${d}\n`);
-    if (s !== undefined) { push('stream\n'); push(s); push('\nendstream\n'); }
-    push('endobj\n');
+  const scale   = A4_W / canvas.width;
+  const totalPtH = canvas.height * scale;
+  const numPages = Math.ceil(totalPtH / A4_H);
+
+  // ── Slice the canvas into page-sized JPEG chunks ─────────────────────────
+  const pages = [];
+  for (let i = 0; i < numPages; i++) {
+    // Source rectangle in canvas pixels
+    const srcY = Math.round(i * A4_H / scale);
+    const srcH = Math.min(canvas.height - srcY, Math.round(A4_H / scale));
+    const ptH  = srcH * scale;                // actual point height of this page
+
+    const tmp  = document.createElement('canvas');
+    tmp.width  = canvas.width;
+    tmp.height = srcH;
+    tmp.getContext('2d').drawImage(
+      canvas, 0, srcY, canvas.width, srcH,
+              0,    0, canvas.width, srcH
+    );
+
+    const blob  = await new Promise((res, rej) =>
+      tmp.toBlob(b => b ? res(b) : rej(new Error('slice toBlob failed')), 'image/jpeg', 0.92)
+    );
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    pages.push({ bytes, ptH, imgW: canvas.width, imgH: srcH });
+
+    if (onPageProgress) onPageProgress(i + 1, numPages);
+  }
+
+  // ── Assemble PDF ──────────────────────────────────────────────────────────
+  // Object layout (N = numPages):
+  //   1        → Catalog
+  //   2        → Pages
+  //   3+3i     → Page i
+  //   4+3i     → Content stream for page i
+  //   5+3i     → Image XObject for page i
+  const enc     = new TextEncoder();
+  const parts   = [];
+  const offsets = {};
+  let   pos     = 0;
+
+  const write = chunk => {
+    const b = typeof chunk === 'string' ? enc.encode(chunk) : chunk;
+    parts.push(b);
+    pos += b.length;
   };
 
-  push('%PDF-1.4\n');
-  push(new Uint8Array([0x25,0xe2,0xe3,0xcf,0xd3,0x0a]));
-  obj(1, '<< /Type /Catalog /Pages 2 0 R >>');
-  obj(2, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
-  obj(3, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>`);
-  obj(4, `<< /Type /XObject /Subtype /Image /Width ${W} /Height ${H} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpegBytes.length} >>`, jpegBytes);
-  const cs = `q ${W} 0 0 ${H} 0 0 cm /Im0 Do Q`;
-  obj(5, `<< /Length ${cs.length} >>`, cs);
+  write('%PDF-1.4\n');
+  write(new Uint8Array([0x25,0xe2,0xe3,0xcf,0xd3,0x0a]));
 
-  const xref = len;
-  push('xref\n0 6\n');
-  push('0000000000 65535 f \n');
-  for (let i = 1; i <= 5; i++) push(String(offsets[i]).padStart(10,'0') + ' 00000 n \n');
-  push(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`);
+  // Catalog
+  offsets[1] = pos;
+  write('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
+
+  // Pages
+  const kids = pages.map((_, i) => `${3 + 3 * i} 0 R`).join(' ');
+  offsets[2] = pos;
+  write(`2 0 obj\n<< /Type /Pages /Kids [${kids}] /Count ${numPages} >>\nendobj\n`);
+
+  for (let i = 0; i < numPages; i++) {
+    const { bytes, ptH, imgW, imgH } = pages[i];
+    const pageObj = 3 + 3 * i;
+    const contObj = 4 + 3 * i;
+    const imgObj  = 5 + 3 * i;
+    const imName  = `Im${i}`;
+
+    // Page
+    offsets[pageObj] = pos;
+    write(
+      `${pageObj} 0 obj\n` +
+      `<< /Type /Page /Parent 2 0 R ` +
+      `/MediaBox [0 0 ${A4_W.toFixed(2)} ${ptH.toFixed(2)}] ` +
+      `/Resources << /XObject << /${imName} ${imgObj} 0 R >> >> ` +
+      `/Contents ${contObj} 0 R >>\n` +
+      `endobj\n`
+    );
+
+    // Content stream: scale image to fill the page (origin bottom-left in PDF)
+    const cs = `q ${A4_W.toFixed(2)} 0 0 ${ptH.toFixed(2)} 0 0 cm /${imName} Do Q`;
+    offsets[contObj] = pos;
+    write(`${contObj} 0 obj\n<< /Length ${cs.length} >>\nstream\n${cs}\nendstream\nendobj\n`);
+
+    // Image XObject
+    offsets[imgObj] = pos;
+    write(
+      `${imgObj} 0 obj\n` +
+      `<< /Type /XObject /Subtype /Image ` +
+      `/Width ${imgW} /Height ${imgH} ` +
+      `/ColorSpace /DeviceRGB /BitsPerComponent 8 ` +
+      `/Filter /DCTDecode /Length ${bytes.length} >>\n` +
+      `stream\n`
+    );
+    write(bytes);
+    write('\nendstream\nendobj\n');
+  }
+
+  // xref + trailer
+  const totalObjs = 3 + 3 * numPages;   // objects 0 .. 2+3N
+  const xrefPos   = pos;
+  write(`xref\n0 ${totalObjs}\n`);
+  write('0000000000 65535 f \n');
+  for (let n = 1; n < totalObjs; n++) {
+    write(String(offsets[n] ?? 0).padStart(10, '0') + ' 00000 n \n');
+  }
+  write(`trailer\n<< /Size ${totalObjs} /Root 1 0 R >>\nstartxref\n${xrefPos}\n%%EOF`);
 
   return new Blob(parts, { type: 'application/pdf' });
 }
