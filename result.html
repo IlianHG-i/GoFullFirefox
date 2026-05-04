@@ -2,72 +2,135 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>GoFullFox - Capture</title>
+    <title>GoFullFox</title>
     <style>
-      :root { color-scheme: light dark; }
+      :root { color-scheme: light dark; --accent: #a78bfa; --accent2: #6d28d9; }
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
       body {
-        margin: 0;
-        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-        background: #1f1f23;
-        color: #f4f4f5;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #18181b;
+        color: #e4e4e7;
+        min-height: 100vh;
       }
+
+      /* ── Header ── */
       header {
         position: sticky;
         top: 0;
         display: flex;
-        gap: 8px;
         align-items: center;
-        padding: 10px 14px;
-        background: #2a2a30;
-        border-bottom: 1px solid #3a3a42;
+        gap: 10px;
+        padding: 12px 16px;
+        background: rgba(24,24,27,0.92);
+        backdrop-filter: blur(12px);
+        border-bottom: 1px solid rgba(255,255,255,0.07);
         z-index: 10;
       }
-      header h1 {
-        font-size: 14px;
-        font-weight: 600;
-        margin: 0 12px 0 0;
-      }
-      header .meta { font-size: 12px; opacity: 0.7; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      button {
-        background: #3b82f6;
-        color: white;
-        border: 0;
-        padding: 6px 14px;
-        border-radius: 6px;
+      .logo {
         font-size: 13px;
-        cursor: pointer;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--accent);
+        flex-shrink: 0;
       }
-      button.secondary { background: #52525b; }
-      button:disabled { opacity: 0.5; cursor: not-allowed; }
+      .meta {
+        font-size: 12px;
+        color: #71717a;
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .actions { display: flex; gap: 8px; flex-shrink: 0; }
+      button {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 7px 14px;
+        border: 0;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: opacity 0.15s;
+      }
+      button:disabled { opacity: 0.4; cursor: not-allowed; }
+      .btn-primary   { background: var(--accent2); color: #fff; }
+      .btn-secondary { background: rgba(255,255,255,0.08); color: #e4e4e7; }
+      .btn-ghost     { background: transparent; color: #a1a1aa; border: 1px solid rgba(255,255,255,0.10); }
+
+      /* ── Progress bar (stitching / encoding) ── */
+      #progress-wrap {
+        padding: 10px 16px 0;
+      }
+      #progress-label {
+        font-size: 12px;
+        color: #71717a;
+        margin-bottom: 6px;
+      }
+      #progress-track {
+        height: 3px;
+        background: rgba(255,255,255,0.08);
+        border-radius: 99px;
+        overflow: hidden;
+      }
+      #progress-fill {
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, var(--accent2), var(--accent));
+        border-radius: 99px;
+        transition: width 0.2s ease;
+      }
+
+      /* ── Preview ── */
       main { padding: 16px; }
-      #status { font-size: 13px; opacity: 0.8; }
       #preview {
         display: block;
         max-width: 100%;
         height: auto;
-        margin-top: 12px;
-        border: 1px solid #3a3a42;
-        background: white;
+        border: 1px solid rgba(255,255,255,0.07);
+        border-radius: 6px;
+        background: #fff;
       }
-      footer { padding: 12px 16px; font-size: 11px; opacity: 0.6; border-top: 1px solid #3a3a42; }
-      a { color: #93c5fd; }
+
+      footer {
+        padding: 12px 16px;
+        font-size: 11px;
+        color: #52525b;
+        border-top: 1px solid rgba(255,255,255,0.07);
+      }
+      footer a { color: #71717a; }
     </style>
   </head>
   <body>
     <header>
-      <h1>GoFullFox</h1>
-      <span class="meta" id="meta"></span>
-      <button id="downloadPng" disabled>Download PNG</button>
-      <button id="downloadPdf" disabled>Download PDF</button>
-      <button id="copy" class="secondary" disabled>Copy</button>
+      <span class="logo">GoFullFox</span>
+      <span class="meta" id="meta">Stitching…</span>
+      <div class="actions">
+        <button class="btn-primary"   id="downloadPng" disabled>Download PNG</button>
+        <button class="btn-primary"   id="downloadPdf" disabled>Download PDF</button>
+        <button class="btn-ghost"     id="copy"        disabled>Copy</button>
+      </div>
     </header>
+
+    <div id="progress-wrap">
+      <div id="progress-label">Preparing…</div>
+      <div id="progress-track"><div id="progress-fill"></div></div>
+    </div>
+
     <main>
-      <div id="status">Stitching capture...</div>
       <img id="preview" alt="" />
     </main>
+
     <footer>
-      Unofficial Firefox port of <a href="https://github.com/mrcoles/full-page-screen-capture-chrome-extension" target="_blank" rel="noopener">GoFullPage</a> by Peter Coles. MIT licensed.
+      Unofficial Firefox port of
+      <a href="https://github.com/mrcoles/full-page-screen-capture-chrome-extension"
+         target="_blank" rel="noopener">GoFullPage</a>
+      by Peter Coles. MIT.
     </footer>
+
     <script src="result.js"></script>
   </body>
 </html>

@@ -1,74 +1,87 @@
 // GoFullFox - result page
-// Stitches tile screenshots onto a canvas using GoFullPage's painter's-algorithm:
-//   ctx.drawImage(img, x - canvasLeft, y - canvasTop)
-// where x/y are the actual scroll positions at capture time.
-// DPR scale is applied once the first image loads (matching GoFullPage's approach).
 
-const statusEl  = document.getElementById('status');
-const previewEl = document.getElementById('preview');
 const metaEl    = document.getElementById('meta');
 const pngBtn    = document.getElementById('downloadPng');
 const pdfBtn    = document.getElementById('downloadPdf');
 const copyBtn   = document.getElementById('copy');
+const progWrap  = document.getElementById('progress-wrap');
+const progLabel = document.getElementById('progress-label');
+const progFill  = document.getElementById('progress-fill');
+const previewEl = document.getElementById('preview');
+
+function setProgress(pct, label) {
+  progFill.style.width = pct + '%';
+  progLabel.textContent = label;
+}
+function hideProgress() {
+  progWrap.style.display = 'none';
+}
 
 (async function main() {
   const { 'gff:result': data } = await browser.storage.local.get('gff:result');
   if (!data) {
-    statusEl.textContent = 'No capture data. Click the extension icon on a tab first.';
+    setProgress(0, 'No capture data — click the extension icon on a tab first.');
     return;
   }
 
   const { screenshots, sourceTitle } = data;
-  let { totalWidth, totalHeight, windowWidth, devicePixelRatio: dpr } = data;
+  let { totalWidth, totalHeight, windowWidth } = data;
+  const total = screenshots.length;
 
-  metaEl.textContent = `${sourceTitle} — ${totalWidth}×${totalHeight}`;
+  metaEl.textContent = `${sourceTitle}`;
 
   // ── Build canvas ──────────────────────────────────────────────────────────
-  // GoFullPage adjusts for actual image size vs windowWidth (zoom/DPR).
-  // We do the same: load the first image, compute scale, then set canvas size.
+  setProgress(5, 'Loading tiles…');
+
   const firstImg = await loadImage(screenshots[0].dataUrl);
+
+  // Scale compensation: if captured image width ≠ windowWidth (zoom / DPR),
+  // adjust all coordinates — same as GoFullPage's api.js.
   if (firstImg.width !== windowWidth) {
     const scale = firstImg.width / windowWidth;
     totalWidth  *= scale;
     totalHeight *= scale;
-    for (const s of screenshots) {
-      s.x *= scale;
-      s.y *= scale;
-    }
+    for (const s of screenshots) { s.x *= scale; s.y *= scale; }
   }
 
   const canvas = document.createElement('canvas');
   canvas.width  = Math.round(totalWidth);
   canvas.height = Math.round(totalHeight);
   const ctx = canvas.getContext('2d');
-  if (!ctx) { statusEl.textContent = 'Canvas allocation failed.'; return; }
+  if (!ctx) { setProgress(0, 'Canvas allocation failed.'); return; }
 
-  // ── Stitch ────────────────────────────────────────────────────────────────
-  // Painter's algorithm — tiles drawn in the order they were captured
-  // (bottom-to-top). Later (higher) tiles win overlapping regions.
+  // ── Stitch tiles ──────────────────────────────────────────────────────────
   ctx.drawImage(firstImg, Math.round(screenshots[0].x), Math.round(screenshots[0].y));
+  setProgress(10, `Stitching tile 1 / ${total}…`);
 
-  for (let i = 1; i < screenshots.length; i++) {
+  for (let i = 1; i < total; i++) {
     const shot = screenshots[i];
     const img  = await loadImage(shot.dataUrl);
     ctx.drawImage(img, Math.round(shot.x), Math.round(shot.y));
+    const pct = 10 + Math.round((i / (total - 1 || 1)) * 70);
+    setProgress(pct, `Stitching tile ${i + 1} / ${total}…`);
   }
 
-  // ── PNG blob → preview ────────────────────────────────────────────────────
+  // ── Encode PNG ────────────────────────────────────────────────────────────
+  setProgress(82, 'Encoding PNG…');
   let pngBlob;
   try {
     pngBlob = await new Promise((res, rej) =>
       canvas.toBlob(b => b ? res(b) : rej(new Error('toBlob failed')), 'image/png')
     );
   } catch (err) {
-    statusEl.textContent = 'PNG encode failed: ' + err.message;
+    setProgress(0, 'PNG encode failed: ' + err.message);
     return;
   }
 
   const pngUrl = URL.createObjectURL(pngBlob);
   previewEl.src = pngUrl;
-  statusEl.textContent =
-    `Done — ${canvas.width}×${canvas.height}px — ${(pngBlob.size / 1024).toFixed(1)} KB`;
+
+  const kbSize = (pngBlob.size / 1024).toFixed(1);
+  metaEl.textContent = `${sourceTitle} — ${canvas.width}×${canvas.height}px — ${kbSize} KB`;
+
+  setProgress(100, 'Done');
+  setTimeout(hideProgress, 800);
 
   pngBtn.disabled = false;
   pdfBtn.disabled = false;
@@ -80,17 +93,32 @@ const copyBtn   = document.getElementById('copy');
 
   pdfBtn.addEventListener('click', async () => {
     pdfBtn.disabled = true;
-    pdfBtn.textContent = 'Encoding PDF…';
+    const prev = pdfBtn.textContent;
+    progWrap.style.display = 'block';
+    setProgress(0, 'Encoding PDF…');
     try {
+      const steps = [
+        [20,  'Compressing image…'],
+        [60,  'Building PDF structure…'],
+        [90,  'Finalising…'],
+      ];
+      let stepIdx = 0;
+      const interval = setInterval(() => {
+        if (stepIdx >= steps.length) { clearInterval(interval); return; }
+        const [p, l] = steps[stepIdx++];
+        setProgress(p, l);
+      }, 300);
       const pdfBlob = await canvasToPdf(canvas);
-      const pdfUrl  = URL.createObjectURL(pdfBlob);
-      triggerDownload(pdfUrl, base + '.pdf');
-      setTimeout(() => URL.revokeObjectURL(pdfUrl), 60_000);
+      clearInterval(interval);
+      setProgress(100, 'PDF ready');
+      setTimeout(hideProgress, 600);
+      triggerDownload(URL.createObjectURL(pdfBlob), base + '.pdf');
     } catch (err) {
       alert('PDF encoding failed: ' + err.message);
+      hideProgress();
     } finally {
       pdfBtn.disabled = false;
-      pdfBtn.textContent = 'Download PDF';
+      pdfBtn.textContent = prev;
     }
   });
 
@@ -119,18 +147,14 @@ function loadImage(src) {
 
 function triggerDownload(url, filename) {
   const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
 }
 
 function sanitizeFilename(name) {
   return (name || 'capture').replace(/[\\/:*?"<>|]+/g, '_').trim().slice(0, 120) || 'capture';
 }
 
-// Minimal single-page PDF writer — embeds the canvas as a JPEG (no dependencies).
 async function canvasToPdf(canvas) {
   const jpegBlob = await new Promise((res, rej) =>
     canvas.toBlob(b => b ? res(b) : rej(new Error('JPEG encode failed')), 'image/jpeg', 0.92)
@@ -138,18 +162,13 @@ async function canvasToPdf(canvas) {
   const jpegBytes = new Uint8Array(await jpegBlob.arrayBuffer());
   const W = canvas.width, H = canvas.height;
   const enc = new TextEncoder();
-  const parts = [];
-  const offsets = [];
-  let len = 0;
+  const parts = []; const offsets = []; let len = 0;
 
-  const push = chunk => {
-    const b = typeof chunk === 'string' ? enc.encode(chunk) : chunk;
-    parts.push(b); len += b.length;
-  };
-  const obj = (n, dict, stream) => {
+  const push = c => { const b = typeof c === 'string' ? enc.encode(c) : c; parts.push(b); len += b.length; };
+  const obj  = (n, d, s) => {
     offsets[n] = len;
-    push(`${n} 0 obj\n${dict}\n`);
-    if (stream !== undefined) { push('stream\n'); push(stream); push('\nendstream\n'); }
+    push(`${n} 0 obj\n${d}\n`);
+    if (s !== undefined) { push('stream\n'); push(s); push('\nendstream\n'); }
     push('endobj\n');
   };
 
@@ -165,7 +184,7 @@ async function canvasToPdf(canvas) {
   const xref = len;
   push('xref\n0 6\n');
   push('0000000000 65535 f \n');
-  for (let i = 1; i <= 5; i++) push(String(offsets[i]).padStart(10, '0') + ' 00000 n \n');
+  for (let i = 1; i <= 5; i++) push(String(offsets[i]).padStart(10,'0') + ' 00000 n \n');
   push(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`);
 
   return new Blob(parts, { type: 'application/pdf' });
