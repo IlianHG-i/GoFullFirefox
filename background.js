@@ -1,65 +1,108 @@
 // GoFullFox - background event page
-// Orchestrates full-page screenshot capture by repeatedly scrolling the
-// active tab and stitching captureVisibleTab() snapshots in a result page.
+// Captures the entire page (or the largest iframe if the page is an iframe
+// wrapper) as a stitched PNG/PDF by scrolling the target frame and calling
+// tabs.captureVisibleTab() for each viewport tile.
 //
-// Algorithm adapted from GoFullPage (mrcoles/full-page-screen-capture-chrome-extension, MIT).
+// Adapted from GoFullPage (mrcoles/full-page-screen-capture-chrome-extension, MIT).
 
-const CAPTURE_DELAY_MS = 250; // let the page settle (lazy images, sticky headers) between scrolls; also avoids Firefox capture rate limit
-const MAX_PRIMARY_DIMENSION = 15000 * 2;
-const MAX_SECONDARY_DIMENSION = 4000 * 2;
-const MAX_AREA = MAX_PRIMARY_DIMENSION * MAX_SECONDARY_DIMENSION;
+const CAPTURE_DELAY_MS = 250;
 
 browser.action.onClicked.addListener(async (tab) => {
   if (!tab || !tab.id) return;
+
+  // ── Step 1: measure all frames to find the one with the most content ──────
+  let frameResults;
   try {
-    await browser.scripting.executeScript({
-      target: { tabId: tab.id },
-      files: ["content.js"],
+    frameResults = await browser.scripting.executeScript({
+      target: { tabId: tab.id, allFrames: true },
+      func: measureFrame,
     });
   } catch (err) {
     notifyError(tab.id, `Cannot run on this page: ${err.message}`);
     return;
   }
 
-  // 1. Measure FIRST, before touching DOM (overflow:hidden would collapse scrollHeight on some sites).
-  let dims;
+  // Pick the frame with the largest scrollable area.
+  const best = frameResults
+    .filter((r) => r.result)
+    .reduce((a, b) =>
+      b.result.totalWidth * b.result.totalHeight >
+      a.result.totalWidth * a.result.totalHeight
+        ? b
+        : a
+    );
+
+  const targetFrameId = best.frameId;
+
+  // ── Step 2: inject content.js into the chosen frame ──────────────────────
   try {
-    dims = await browser.tabs.sendMessage(tab.id, { type: "gff:getDimensions" });
+    await browser.scripting.executeScript({
+      target: { tabId: tab.id, frameIds: [targetFrameId] },
+      files: ["content.js"],
+    });
   } catch (err) {
-    notifyError(tab.id, `Failed to read page dimensions: ${err.message}`);
+    notifyError(tab.id, `Cannot inject into frame: ${err.message}`);
     return;
   }
 
-  // 2. Now hide scrollbars and freeze fixed/sticky elements.
-  await browser.tabs.sendMessage(tab.id, { type: "gff:prepare" }).catch(() => {});
+  // ── Step 3: measure (before touching DOM) then prepare ───────────────────
+  let dims;
+  try {
+    dims = await browser.tabs.sendMessage(
+      tab.id,
+      { type: "gff:getDimensions" },
+      { frameId: targetFrameId }
+    );
+  } catch (err) {
+    notifyError(tab.id, `Failed to read dimensions: ${err.message}`);
+    return;
+  }
 
-  const arrangements = computeArrangements(dims);
+  await browser.tabs
+    .sendMessage(tab.id, { type: "gff:prepare" }, { frameId: targetFrameId })
+    .catch(() => {});
+
+  // ── Step 4: tile loop ─────────────────────────────────────────────────────
+  const positions = computePositions(dims);
   const screenshots = [];
-  for (const pos of arrangements) {
+
+  for (const pos of positions) {
     let actual;
     try {
-      actual = await browser.tabs.sendMessage(tab.id, { type: "gff:scrollTo", x: pos.x, y: pos.y });
+      actual = await browser.tabs.sendMessage(
+        tab.id,
+        { type: "gff:scrollTo", x: pos.x, y: pos.y },
+        { frameId: targetFrameId }
+      );
     } catch (err) {
       notifyError(tab.id, `Scroll failed: ${err.message}`);
-      await browser.tabs.sendMessage(tab.id, { type: "gff:restore" }).catch(() => {});
+      await browser.tabs
+        .sendMessage(tab.id, { type: "gff:restore" }, { frameId: targetFrameId })
+        .catch(() => {});
       return;
     }
+
     await sleep(CAPTURE_DELAY_MS);
+
     let dataUrl;
     try {
       dataUrl = await browser.tabs.captureVisibleTab(tab.windowId, { format: "png" });
     } catch (err) {
       notifyError(tab.id, `Capture failed: ${err.message}`);
-      await browser.tabs.sendMessage(tab.id, { type: "gff:restore" }).catch(() => {});
+      await browser.tabs
+        .sendMessage(tab.id, { type: "gff:restore" }, { frameId: targetFrameId })
+        .catch(() => {});
       return;
     }
-    // Use the *actual* scroll position so painter's-algorithm stitching aligns
-    // even when the browser clamps scrollTo at the page bottom/right.
+
     screenshots.push({ x: actual.x, y: actual.y, dataUrl });
   }
 
-  await browser.tabs.sendMessage(tab.id, { type: "gff:restore" }).catch(() => {});
+  await browser.tabs
+    .sendMessage(tab.id, { type: "gff:restore" }, { frameId: targetFrameId })
+    .catch(() => {});
 
+  // ── Step 5: hand off to result page ──────────────────────────────────────
   await browser.storage.local.set({
     "gff:result": {
       screenshots,
@@ -77,8 +120,35 @@ browser.action.onClicked.addListener(async (tab) => {
   await browser.tabs.create({ url: browser.runtime.getURL("result.html") });
 });
 
-function computeArrangements(dims) {
-  const { totalWidth, totalHeight, windowWidth, windowHeight } = dims;
+// Runs inside every frame via scripting.executeScript to measure its content.
+// Must be a named function (not arrow) so Firefox can serialise it.
+function measureFrame() {
+  const body = document.body;
+  const html = document.documentElement;
+  const totalWidth = Math.max(
+    body ? body.scrollWidth : 0,
+    body ? body.offsetWidth : 0,
+    html.clientWidth,
+    html.scrollWidth,
+    html.offsetWidth
+  );
+  const totalHeight = Math.max(
+    body ? body.scrollHeight : 0,
+    body ? body.offsetHeight : 0,
+    html.clientHeight,
+    html.scrollHeight,
+    html.offsetHeight
+  );
+  return {
+    totalWidth,
+    totalHeight,
+    windowWidth: window.innerWidth,
+    windowHeight: window.innerHeight,
+    devicePixelRatio: window.devicePixelRatio || 1,
+  };
+}
+
+function computePositions({ totalWidth, totalHeight, windowWidth, windowHeight }) {
   const positions = [];
   for (let y = 0; y < totalHeight; y += windowHeight) {
     for (let x = 0; x < totalWidth; x += windowWidth) {
@@ -86,10 +156,6 @@ function computeArrangements(dims) {
     }
   }
   if (positions.length === 0) positions.push({ x: 0, y: 0 });
-  const dpr = dims.devicePixelRatio || 1;
-  if (totalWidth * dpr * totalHeight * dpr > MAX_AREA) {
-    console.warn("GoFullFox: capture area exceeds safe limit; output may be cropped by the browser.");
-  }
   return positions;
 }
 
